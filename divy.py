@@ -4,7 +4,8 @@ import cv2
 transmitter=tx(17, "pi4b")
 receiver=rx(27, "zero")
 
-
+def stop():
+    pass
 def up():
     pass
 def down():
@@ -32,8 +33,10 @@ def send_video():
 def controll():
     while True:
         h, data=receiver.recv()
-        if "stop" in data:
+        if "exit" in data:
             return(0)
+        if "stop" in data:
+            stop()
         elif "up" in data:
             up()
         elif "down" in data:
