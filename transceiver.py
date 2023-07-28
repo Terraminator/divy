@@ -182,6 +182,8 @@ class rx:
                 if get_payload(p, get_header(p)):
                     packets.put(p)
                     seqs.append(seq)
+                    if seq==4095:
+                        seqs=[]
 
 
     def recv(self):
