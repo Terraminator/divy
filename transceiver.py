@@ -11,11 +11,24 @@ PACKET_SIZE=80 # 80bytes   later 1024bytes?
 HEADER_LENGTH=29 #29bytes
 PAYLOAD_SIZE=PACKET_SIZE-HEADER_LENGTH
 
-def bin_to_str(b):
-    pass
-
 def str_to_bin(s):
-    pass
+        b=""
+        for c in s:
+                b+=bin(ord(c))[2:].zfill(8)
+        return(b)
+
+def bin_to_str(b):
+        s=""
+        c=1
+        tmp=""
+        for sig in b:
+                tmp+=str(sig)
+                if c==8:
+                        c=0
+                        s+=chr(int(tmp, 2))
+                        tmp="" 
+                c+=1
+        return(s)
 
 def int_to_bin(i, pad_size=8):
     return(bin(int(i))[2:].zfill(pad_size))
