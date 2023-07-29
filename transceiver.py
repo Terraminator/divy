@@ -4,18 +4,18 @@ from queue import Queue
 import threading
 import sys
 
-ENTRY="11111111"
-EXIT="10000001"
+ENTRY="1111111111111111"
+EXIT="1011111111111111"
 
 PACKET_SIZE=80 # 80bytes   later 1024bytes?
-HEADER_LENGTH=37 #37bytes
+HEADER_LENGTH=9 #37bytes
 PAYLOAD_SIZE=PACKET_SIZE-HEADER_LENGTH
 
 def str_to_bin(s):
         b=""
         for c in s:
                 b+=bin(ord(c))[2:].zfill(8)
-        return(b)
+        return(str(b))
 
 def bin_to_str(b):
         s=""
@@ -31,16 +31,20 @@ def bin_to_str(b):
         return(s)
 
 def int_to_bin(i, pad_size=8):
-    return(bin(int(i))[2:].zfill(pad_size))
+    return(str(bin(int(i))[2:].zfill(pad_size)))
 
 def bin_to_int(b, pad_size=8):
-    tmp=""
-    for o in b:
-        if len(tmp)==pad_size:
+    if len(b)%pad_size!=0:
+        yield -1
+    else:
+        tmp=""
+        for o in b:
+            if len(tmp)==pad_size:
+                yield(int(tmp, 2))
+                tmp=""
+            tmp+=o
+        if tmp !='':
             yield(int(tmp, 2))
-            tmp=""
-        tmp+=o
-    yield(int(tmp, 2))
 
 def bin_to_bytes(b, pad_size=8):
     tmp=""
@@ -66,14 +70,12 @@ def checksum(data, text=True):
     return(sum(bin_to_int(data)))
 
 
-gpio.setmode(gpio.BCM)
-
-
 
 class tx:
-    def __init__(self, tx_pin, target="", repeat=10, time_of_oscilation=0.2):
+    def __init__(self, tx_pin, target="", repeat=10, time_of_oscilation=0.1):
+        gpio.setmode(gpio.BCM)
         self.tx_pin = tx_pin
-        gpio.setup(tx_pin, gpio.OUT)
+        gpio.setup(self.tx_pin, gpio.OUT)
         self.target = target
         self.too=time_of_oscilation
         self.q=Queue()
@@ -97,20 +99,29 @@ class tx:
                 seq+=1
 
     def tbit_(self, sig):
+        if not gpio.getmode(): gpio.setmode(gpio.BCM)
+        gpio.setup(self.tx_pin, gpio.OUT)
+        sig=int(sig)
         if sig==0:
                 gpio.output(self.tx_pin, 0)
                 sleep(self.too)
         elif sig==1:
             gpio.output(self.tx_pin, 1)
             sleep(self.too)
+        else:
+            print("error in tbit")
 
     def transmit_(self, data, target, seq=None, flag=None, header=False):
-        target=str_to_bin(target)
         if not header:
-            #header: 4bytes+16bytes+16bytes+1byte
+            #header: 4bytes+2bytes+2bytes+1byte
             #target: str_to_bin(zero/pi4b)
-            flag=0 # is text/is frame
+            flag=1 # is text/is frame
             h = str_to_bin(target)+int_to_bin(seq, 16)+int_to_bin(checksum(data), 16)+int_to_bin(flag)
+            hl={"target":str_to_bin(target), "seq":int_to_bin(seq, 16), "checksum":int_to_bin(checksum(data),16), "flag":int_to_bin(flag)}
+            hlc={"target":target, "seq":seq, "checksum":checksum(data), "flag":flag}
+            print("header raw:", h, "\n\n")
+            print("header bin:", hl, "\n\n")
+            print("header clean:", hlc, "\n\n")
             if len(h)!=HEADER_LENGTH*8: print("header length doesnt match constant: {}!={}".format(len(h), HEADER_LENGTH*8))
             for sig in ENTRY:
                 self.tbit_(sig)
@@ -127,18 +138,20 @@ class tx:
         for c in chunks(data, PAYLOAD_SIZE*8):
             if len(c)!=PAYLOAD_SIZE*8: print("payload size doesnt match constant: {}!={}".format(len(c), PAYLOAD_SIZE*8))
             self.q.put((c, raw))
+        return(0)
 
     def cleanup(self):
         del self.worker
         gpio.cleanup()
-        del self
+        return(0)
 
 class rx:
-    def __init__(self,rx_pin,name, repeat=10, delay=0.1, time_of_oscilation=0.2):
+    def __init__(self,rx_pin,name, repeat=10,  time_of_oscilation=0.1):
         self.rx_pin = rx_pin
+        gpio.setmode(gpio.BCM)
         gpio.setup(self.rx_pin, gpio.IN)
-        self.delay=delay
         self.repeat = repeat
+        self.delay=time_of_oscilation/2
         self.name=name #needed to read only packets addressed to this receiver
         self.q=Queue()
         self.worker1=threading.Thread(target=self.fill_queue)
@@ -148,7 +161,8 @@ class rx:
         self.packets=Queue()
 
     def normalize(self, b):
-        return(b[::2])
+        #return(b[::2]) removed for debugging purposes
+        return(b)
 
     def fill_queue(self):
         b=""
@@ -156,29 +170,35 @@ class rx:
             b+=str(gpio.input(self.rx_pin))
             sleep(self.delay)
             if EXIT in self.normalize(b):
-                self.q.put(b[b.find(ENTRY)+8:b.find(EXIT)+8])
-                b=b.replace(b[b.find(ENTRY)+8:b.find(EXIT)+8], "")
+                self.q.put(b[b.find(ENTRY)+16:b.find(EXIT)])
+                b=""
 
 
     def get_header(self, packet):
         try:
             h=packet[:HEADER_LENGTH*8]
-            header={"target":bin_to_str(h[:4*8]), "seq":bin_to_int(h[4*8:4*8+16*8]), "checksum":bin_to_int(h[4*8+16*8:4*8+16*8+16*8]), "flag":bin_to_int(h[4*8+16*8+16*8:4*8+16*8+16*8+8])}
-        except:
+            header={"target":bin_to_str(h[:4*8]), "seq":list(bin_to_int(h[4*8:4*8+2*8], 16))[0], "checksum":list(bin_to_int(h[4*8+2*8:4*8+2*8+2*8], 16))[0], "flag":list(bin_to_int(h[4*8+2*8+2*8:4*8+2*8+2*8+1*8]))[0]}
+        except Exception as e:
+            print(e)
             return(False)# header corrupted
+        #print("header: ", header, "\n\n")
         return(header)
 
-    def get_payload(packet, header):
+    def get_payload(self, packet, header):
         if not header:
-            return(Fasle)# header corrupted
+            print("header corrupted")
+            return(False)# header corrupted
         p=packet[HEADER_LENGTH*8:]
-        if checksum(p)==header["checksum"]:
+        if not int(checksum(p))==int(header["checksum"]):
+            print("payload corrupted")
             return(False) # payload corrupted
         else:
-            if header["flag"]==1: #is text
+            if int(header["flag"])==1: #is text
                 return(bin_to_str(p))
-            elif header["flag"]==0:
+            elif int(header["flag"])==0:
                 return(bin_to_bytes(p))
+            else:
+                print("error in get_payload")
 
     def sort(self, packets):
         return(sorted(packets))
@@ -190,19 +210,21 @@ class rx:
         max_p=self.repeat*2
         while True:
             p=self.q.get()
-            seq=self.get_header(p)["seq"]
-            if seq and seq not in seqs:
-                if self.get_payload(p, self.get_header(p)):
-                    packets.put(p)
-                    seqs.append(seq)
-                    if seq==4095:
-                        seqs=[]
+            if p != '':
+                seq=self.get_header(p)["seq"]
+                name=self.get_header(p)["target"]
+                if seq and seq not in seqs:
+                    if self.get_payload(p, self.get_header(p)) and str(self.name)==str(name):
+                        self.packets.put(p)
+                        seqs.append(seq)
+                        if seq==4095:
+                            seqs=[]
 
 
     def recv(self):
         while True:
             p=self.packets.get()
-            yield (self.get_header(p), self.get_header(p))
+            yield (self.get_header(p), self.get_payload(p, self.get_header(p)).replace("\x00", ""))
 
     def cleanup(self):
         del self.worker1
