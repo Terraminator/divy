@@ -1,8 +1,9 @@
 import RPi.GPIO as gpio
-from time import sleep
+from time import sleep, time
 from queue import Queue
 import threading
 import sys
+import os
 
 ENTRY="1111111111111111"
 EXIT="1011111111111111"
@@ -71,8 +72,10 @@ def checksum(data, text=True):
 
 
 
+
 class tx:
-    def __init__(self, tx_pin, target="", repeat=10, time_of_oscilation=0.1):
+    def __init__(self, tx_pin, target="", repeat=10, time_of_oscilation=0.0001):
+        os.nice(20)
         gpio.setmode(gpio.BCM)
         self.tx_pin = tx_pin
         gpio.setup(self.tx_pin, gpio.OUT)
@@ -102,11 +105,16 @@ class tx:
         if not gpio.getmode(): gpio.setmode(gpio.BCM)
         gpio.setup(self.tx_pin, gpio.OUT)
         sig=int(sig)
+        print(sig, flush=True, end="")
         if sig==0:
+                gpio.output(self.tx_pin, 1)
+                sleep(self.too)
                 gpio.output(self.tx_pin, 0)
                 sleep(self.too)
         elif sig==1:
             gpio.output(self.tx_pin, 1)
+            sleep(self.too*4)
+            gpio.output(self.tx_pin, 0)
             sleep(self.too)
         else:
             print("error in tbit")
@@ -146,12 +154,29 @@ class tx:
         return(0)
 
 class rx:
-    def __init__(self,rx_pin,name, repeat=10,  time_of_oscilation=0.1):
+    def __init__(self,rx_pin,name, repeat=10,  time_of_oscilation=0.0001, tolerance=50):
+        os.nice(20)
         self.rx_pin = rx_pin
+        self.f=False
+        self.zero_space=range(500)
+        self.one_space=range(0)
         gpio.setmode(gpio.BCM)
         gpio.setup(self.rx_pin, gpio.IN)
         self.repeat = repeat
-        self.delay=time_of_oscilation/2
+        #self.delay=time_of_oscilation/2
+        self.f=int(self.calc_frequency()) #1/s
+        self.one_space=range(int((self.f*(time_of_oscilation*4+time_of_oscilation)))-tolerance, int((self.f*(time_of_oscilation*4+time_of_oscilation)))+tolerance)
+        self.zero_space=range(int((self.f*(time_of_oscilation*2)))-tolerance, int((self.f*(time_of_oscilation*2)))+tolerance) 
+        print(self.one_space)
+        print(self.zero_space)
+        if int(self.f*(time_of_oscilation*4+time_of_oscilation)) not in self.one_space:
+            print("you need to decrease the time_of_oscilation!")
+            self.cleanup()
+            return(0)
+        if int(self.f*(time_of_oscilation*2)) not in self.zero_space:
+            print("you need to decrease the time_of_oscilation!")
+            self.cleanup()
+            return(0)
         self.name=name #needed to read only packets addressed to this receiver
         self.q=Queue()
         self.worker1=threading.Thread(target=self.fill_queue)
@@ -160,15 +185,46 @@ class rx:
         self.worker2.start()
         self.packets=Queue()
 
+
+
+    def calc_frequency(self):
+        os.nice(20)
+        b=""
+        t1=time()
+        for i in range(10):
+            s=str(gpio.input(self.rx_pin))
+            #print(s, end="", flush=True)
+            b+=s
+            if len(b)>PACKET_SIZE*10: b=""
+            if EXIT in self.normalize(b):
+                self.q.put(b[b.find(ENTRY)+16:b.find(EXIT)])
+                b=""
+        return(1/((time()-t1)/10))
+
+
+
     def normalize(self, b):
-        #return(b[::2]) removed for debugging purposes
-        return(b)
+        #return(b[::2]) #removed for debugging purposes
+        #return(b)
+        clean=""
+        sigs=" ".join((" ".join(b.split("01"))).split("10")).split()
+        for i in range(0, len(sigs)):
+            if "1" in sigs[i]:
+                if sigs[i].count("1") in self.zero_space:
+                   clean+="0"
+                elif sigs[i].count("1") in self.one_space: 
+                   clean+="1"
+                #print("1*{}".format(sigs[i].count("1")))
+        #print(clean)
+        return(clean)
 
     def fill_queue(self):
+        os.nice(20)
         b=""
         while True:
-            b+=str(gpio.input(self.rx_pin))
-            sleep(self.delay)
+            s=str(gpio.input(self.rx_pin))
+            #print(s, end="", flush=True)
+            b+=s
             if EXIT in self.normalize(b):
                 self.q.put(b[b.find(ENTRY)+16:b.find(EXIT)])
                 b=""
@@ -227,7 +283,10 @@ class rx:
             yield (self.get_header(p), self.get_payload(p, self.get_header(p)).replace("\x00", ""))
 
     def cleanup(self):
-        del self.worker1
-        del self.worker2
+        try:
+            del self.worker1
+            del self.worker2
+        except:
+            pass #workers have not been defined yet
         gpio.cleanup()
-        del self
+

@@ -1,5 +1,5 @@
 from transceiver import *
-receiver=rx(27, "pi4b", time_of_oscilation=0)
+receiver=rx(27, "pi4b", repeat=10)
 while True:
 	try:
 		for x in receiver.recv():

@@ -1,13 +1,9 @@
 from transceiver import *
-transmitter=tx(17, "pi4b", repeat=1)
-#while True:
+transmitter=tx(17, "pi4b", repeat=10)
 
-#gpio.output(17, 1)
-#sleep(5)
-#gpio.output(17, 0)
-for i in range(1):
+for i in range(20):
 	try:
-		print("sending...")
+		print("sending hallo...")
 		transmitter.send("hallo")
 	except Exception as e:
 		print(e)
