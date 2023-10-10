@@ -156,27 +156,14 @@ class tx:
         return(0)
 
 class rx:
-    def __init__(self,rx_pin,name, repeat=10,  time_of_oscilation=0.0001, tolerance=50):
+    def __init__(self,rx_pin,name, repeat=10,  time_of_oscilation=(1/(10**9))):
         os.nice(-20)
         self.rx_pin = rx_pin
         self.r_data=""
+        self.too=time_of_oscilation
         gpio.setmode(gpio.BCM)
         gpio.setup(self.rx_pin, gpio.IN)
         self.repeat = repeat
-        #self.delay=time_of_oscilation/2
-        self.f=int(self.calc_frequency()) #1/s
-        self.one_space=range(int((self.f*(time_of_oscilation*4+time_of_oscilation)))-tolerance, int((self.f*(time_of_oscilation*4+time_of_oscilation)))+tolerance)
-        self.zero_space=range(int((self.f*(time_of_oscilation*2)))-tolerance, int((self.f*(time_of_oscilation*2)))+tolerance) 
-        print(self.one_space)
-        print(self.zero_space)
-        if int(self.f*(time_of_oscilation*4+time_of_oscilation)) not in self.one_space:
-            print("you need to decrease the time_of_oscilation!")
-            self.cleanup()
-            return(0)
-        if int(self.f*(time_of_oscilation*2)) not in self.zero_space:
-            print("you need to decrease the time_of_oscilation!")
-            self.cleanup()
-            return(0)
         self.name=name #needed to read only packets addressed to this receiver
         self.q=Queue()
         self.worker1=threading.Thread(target=self.fill_queue)
@@ -314,3 +301,4 @@ class rx:
         except:
             pass #workers have not been defined yet
         gpio.cleanup()
+
