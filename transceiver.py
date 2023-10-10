@@ -104,8 +104,9 @@ class tx:
                 seq+=1
 
     def tbit_(self, sig):
-        if not gpio.getmode(): gpio.setmode(gpio.BCM)
-        gpio.setup(self.tx_pin, gpio.OUT)
+        if not gpio.getmode():
+            gpio.setmode(gpio.BCM)
+            gpio.setup(self.tx_pin, gpio.OUT)
         sig=int(sig)
         print(sig, flush=True, end="")
         if sig==0:
