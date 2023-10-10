@@ -1,5 +1,5 @@
 import RPi.GPIO as gpio
-from time import sleep, time
+from time import sleep, time, time_ns
 from queue import Queue
 import threading
 import sys
@@ -227,7 +227,7 @@ class rx:
         os.nice(-20)
         b=""
         self.data_r=""
-        t1=time.time_ns()
+        t1=time_ns()
         lsig=None
         lt=0
         t=threading.Thread(target=self.evaluate)
@@ -235,8 +235,8 @@ class rx:
         while True:
             s=str(gpio.input(self.rx_pin))
             if lsig!=s:
-                delta_t=time.time_ns()-lt
-                lt=time.time_ns()
+                delta_t=time_ns()-lt
+                lt=time_ns()
                 lsig=s
                 self.data_r+=str(lt-t1) + ":" + str(delta_t) + ":" + str(s) + "\n"
 
@@ -301,4 +301,5 @@ class rx:
         except:
             pass #workers have not been defined yet
         gpio.cleanup()
+
 
