@@ -74,13 +74,15 @@ def checksum(data, text=True):
 
 
 class tx:
-    def __init__(self, tx_pin, target="", repeat=10, time_of_oscilation=0.0001):
-        os.nice(20)
+    def __init__(self, tx_pin, target="", repeat=10, time_of_oscilation=(1/(10**9))):
+        os.nice(-20)
         gpio.setmode(gpio.BCM)
         self.tx_pin = tx_pin
         gpio.setup(self.tx_pin, gpio.OUT)
         self.target = target
-        self.too=time_of_oscilation
+        self.too=time_of_oscilation#0.5ns=short and long=1ns
+        #short short is 0
+        #long long is 1
         self.q=Queue()
         self.repeat = repeat
         self.worker=threading.Thread(target=self.watch_queue)
@@ -113,9 +115,9 @@ class tx:
                 sleep(self.too)
         elif sig==1:
             gpio.output(self.tx_pin, 1)
-            sleep(self.too*4)
+            sleep(self.too*2)
             gpio.output(self.tx_pin, 0)
-            sleep(self.too)
+            sleep(self.too*2)
         else:
             print("error in tbit")
 
@@ -155,11 +157,9 @@ class tx:
 
 class rx:
     def __init__(self,rx_pin,name, repeat=10,  time_of_oscilation=0.0001, tolerance=50):
-        os.nice(20)
+        os.nice(-20)
         self.rx_pin = rx_pin
-        self.f=False
-        self.zero_space=range(500)
-        self.one_space=range(0)
+        self.r_data=""
         gpio.setmode(gpio.BCM)
         gpio.setup(self.rx_pin, gpio.IN)
         self.repeat = repeat
@@ -186,48 +186,73 @@ class rx:
         self.packets=Queue()
 
 
+    def is_long(self, delta_t):
+        delta_t=int(delta_t)
+        if self.too*2-(0.2*(1/(10**9)))<=delta_t<=self.too*2+(0.2*(1/(10**9))):
+            return(True)
+        else:
+            return(False)
 
-    def calc_frequency(self):
-        os.nice(20)
-        b=""
-        t1=time()
-        for i in range(10):
-            s=str(gpio.input(self.rx_pin))
-            #print(s, end="", flush=True)
-            b+=s
-            if len(b)>PACKET_SIZE*10: b=""
-            if EXIT in self.normalize(b):
-                self.q.put(b[b.find(ENTRY)+16:b.find(EXIT)])
-                b=""
-        return(1/((time()-t1)/10))
+    def is_short(self, delta_t):
+        delta_t=int(delta_t)
+        if self.too-(0.2*(1/(10**9)))<=delta_t<=self.too+(0.2*(1/(10**9))):
+            return(True)
+        else:
+            return(False)
 
-
-
-    def normalize(self, b):
-        #return(b[::2]) #removed for debugging purposes
-        #return(b)
+    def evaluate(self):
         clean=""
-        sigs=" ".join((" ".join(b.split("01"))).split("10")).split()
-        for i in range(0, len(sigs)):
-            if "1" in sigs[i]:
-                if sigs[i].count("1") in self.zero_space:
-                   clean+="0"
-                elif sigs[i].count("1") in self.one_space: 
-                   clean+="1"
-                #print("1*{}".format(sigs[i].count("1")))
-        #print(clean)
-        return(clean)
+        timestamps=[]
+        signal_values=[]
+        delta_ts=[]
+        while True:
+            if self.data_r.find("\n")!=-1 and self.data_r.find(":")!=-1:
+                start=int(self.r_data.split("\n")[0].split(":")[0])
+                for x in self.data_r.split("\n"):
+                    t=int(x.split(":")[0])
+                    td=int(x.split(":")[1])
+                    y=int(x.split(":")[2])
+                    timestamps.append(int(t)-start)
+                    delta_ts.append(int(td))
+                    signal_values.append(int(y))
+                if len(timestamps>1):
+                    for i in range(0, len(timestamps)-1):
+                        if self.is_long(delta_ts[i]) and self.is_long(delta_ts[i+1]) and int(signal_values[i])==0 and int(signal_values[i+1])==1:
+                            clean+="1"
+                            del delta_ts[i:i+2]
+                            del timestamps[i:i+2]
+                            del signal_values[i:i+2]
+                        elif self.is_short(delta_ts[i]and self.is_short(delta_ts[i+1])) and int(signal_values[i])==0 and int(signal_values[i+1])==1:
+                            clean+="0"
+                            del delta_ts[i:i+2]
+                            del timestamps[i:i+2]
+                            del signal_values[i:i+2]
+                                   
+                if EXIT in clean:
+                    self.q.put(clean[clean.find(ENTRY)+16:clean.find(EXIT)])
+                    clean=""
+                    self.data_r=""
+                    timestamps=[]
+                    signal_values=[]
+                    delta_ts=[]
 
     def fill_queue(self):
-        os.nice(20)
+        os.nice(-20)
         b=""
+        self.data_r=""
+        t1=time.time_ns()
+        lsig=None
+        lt=0
+        t=threading.Thread(target=self.evaluate)
+        t.start()
         while True:
             s=str(gpio.input(self.rx_pin))
-            #print(s, end="", flush=True)
-            b+=s
-            if EXIT in self.normalize(b):
-                self.q.put(b[b.find(ENTRY)+16:b.find(EXIT)])
-                b=""
+            if lsig!=s:
+                delta_t=time.time_ns()-lt
+                lt=time.time_ns()
+                lsig=s
+                self.data_r+=str(lt-t1) + ":" + str(delta_t) + ":" + str(s) + "\n"
+
 
 
     def get_header(self, packet):
@@ -289,4 +314,3 @@ class rx:
         except:
             pass #workers have not been defined yet
         gpio.cleanup()
-
