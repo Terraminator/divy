@@ -189,37 +189,35 @@ class rx:
 
     def evaluate(self):
         clean=""
-        timestamps=[]
         signal_values=[]
         delta_ts=[]
         while True:
             if self.data_r.find("\n")!=-1 and self.data_r.find(":")!=-1:
-                start=int(self.r_data.split("\n")[0].split(":")[0])
-                for x in self.data_r.split("\n"):
-                    t=int(x.split(":")[0])
-                    td=int(x.split(":")[1])
-                    y=int(x.split(":")[2])
-                    timestamps.append(int(t)-start)
-                    delta_ts.append(int(td))
-                    signal_values.append(int(y))
-                if len(timestamps>1):
-                    for i in range(0, len(timestamps)-1):
-                        if self.is_long(delta_ts[i]) and self.is_long(delta_ts[i+1]) and int(signal_values[i])==0 and int(signal_values[i+1])==1:
-                            clean+="1"
-                            del delta_ts[i:i+2]
-                            del timestamps[i:i+2]
-                            del signal_values[i:i+2]
-                        elif self.is_short(delta_ts[i]and self.is_short(delta_ts[i+1])) and int(signal_values[i])==0 and int(signal_values[i+1])==1:
-                            clean+="0"
-                            del delta_ts[i:i+2]
-                            del timestamps[i:i+2]
-                            del signal_values[i:i+2]
+                try:
+                    for x in self.data_r.split("\n"):
+                        td=int(x.split(":")[0])
+                        y=int(x.split(":")[1])
+                        delta_ts.append(int(td))
+                        signal_values.append(int(y))
+                    if len(delta_ts)>1:
+                        for i in range(0, len(delta_ts)-1):
+                            if self.is_long(delta_ts[i]) and self.is_long(delta_ts[i+1]) and int(signal_values[i])==0 and int(signal_values[i+1])==1:
+                                clean+="1"
+                                del delta_ts[i:i+2]
+                                del signal_values[i:i+2]
+                            elif self.is_short(delta_ts[i]and self.is_short(delta_ts[i+1])) and int(signal_values[i])==0 and int(signal_values[i+1])==1:
+                                clean+="0"
+                                del delta_ts[i:i+2]
+                                del signal_values[i:i+2]
+                except ValueError:
+                    pass
+                except Exception as e:
+                    print(e)
                                    
                 if EXIT in clean:
                     self.q.put(clean[clean.find(ENTRY)+16:clean.find(EXIT)])
                     clean=""
                     self.data_r=""
-                    timestamps=[]
                     signal_values=[]
                     delta_ts=[]
 
@@ -227,7 +225,6 @@ class rx:
         os.nice(-20)
         b=""
         self.data_r=""
-        t1=time_ns()
         lsig=None
         lt=0
         t=threading.Thread(target=self.evaluate)
@@ -238,7 +235,7 @@ class rx:
                 delta_t=time_ns()-lt
                 lt=time_ns()
                 lsig=s
-                self.data_r+=str(lt-t1) + ":" + str(delta_t) + ":" + str(s) + "\n"
+                self.data_r+=str(delta_t) + ":" + str(s) + "\n"
 
 
 
@@ -301,5 +298,6 @@ class rx:
         except:
             pass #workers have not been defined yet
         gpio.cleanup()
+
 
 
